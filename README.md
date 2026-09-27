@@ -1,30 +1,22 @@
 # orca-devcontainer
 
-Public Docker image that runs [`orca serve`](https://github.com/stablyai/orca) with `asdf` and an SSH server, following the official [Headless Linux Server](https://github.com/stablyai/orca/blob/main/docs/reference/headless-linux-server.md) guide.
+Runs [`orca serve`](https://github.com/stablyai/orca) with `asdf` and an SSH server, following the official [Headless Linux Server](https://github.com/stablyai/orca/blob/main/docs/reference/headless-linux-server.md) guide. The image is built from this repository: the build resolves the newest Orca release, or the version you pin.
 
 ## Quick start
 
-Pull and run:
+Clone and build — the first build takes a few minutes (apt packages plus the Orca package):
 
 ```bash
-docker run -d --name orca \
-  -p 2222:22 \
-  -e ORCA_PAIRING_ADDRESS=127.0.0.1 \
-  -v orca-home:/home/agent \
-  ghcr.io/washingtonj/orca-devcontainer:latest
-
-docker logs -f orca   # grab the pairing URL
-```
-
-Or copy `docker-compose.yml`, adjust `.env`, then:
-
-```bash
+git clone https://github.com/washingtonj/orca-devcontainer.git
+cd orca-devcontainer
 cp .env.example .env
-docker compose up -d
-docker compose logs -f
+docker compose up -d --build
+docker compose logs -f   # grab the pairing URL
 ```
 
 ## Environment variables
+
+Set these in `.env` next to `docker-compose.yml` — compose reads it — or in your environment.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -38,13 +30,19 @@ docker compose logs -f
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth (compose only) |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start (compose only) |
 
-`ORCA_PORT` is pinned to `6768` by `docker-compose.yml`; change it there or via `docker run -e`.
+`ORCA_PORT` is pinned to `6768` by `docker-compose.yml`; change it there or in `.env`.
 
-Build args (only relevant when building the image yourself):
+Build args (`docker compose` passes them through from your environment or `.env`):
 
 | Build arg | Default | Purpose |
 |---|---|---|
-| `ORCA_VERSION` | `1.4.205` | Orca .deb package version to download |
+| `ORCA_VERSION` | `latest` | Orca .deb version to download; `latest` resolves the newest release during the build |
+
+Docker caches the layer that installs Orca: a rebuild with the same value reuses the cached release instead of the newest one, and even when that layer re-runs, an already-downloaded package comes from the build cache, so only a new release is fetched. [Upgrade](#upgrade) shows the fast path (only that layer re-runs) and the full refresh; to pin a build:
+
+```bash
+ORCA_VERSION=1.4.215 docker compose build
+```
 
 `ORCA_PAIRING_ADDRESS` defaults to `HOST_BIND`, so the address clients use matches where the ports are published. Set it explicitly when the client reaches the server through a different address:
 
@@ -169,12 +167,25 @@ Then add a folder in the GUI and pair with your other devices — syncthing is n
 
 ## Upgrade
 
+Orca only — the Orca layer re-runs, everything before it is reused:
+
 ```bash
-docker compose pull
+git pull
+ORCA_VERSION=$(scripts/install-orca.sh --print-latest) docker compose up -d --build
+```
+
+`--print-latest` resolves the newest release and passes it as the build arg; a release already in the build cache is not downloaded again. When you want a fresh base image and Debian packages too — every layer re-runs:
+
+```bash
+docker compose build --pull --no-cache
 docker compose up -d
 ```
 
-The volume is preserved. Orca migrates its on-disk state forward across upgrades.
+The volume is preserved either way, and Orca migrates its on-disk state forward. Check what the running container holds:
+
+```bash
+docker exec orca cat /opt/Orca/VERSION
+```
 
 ## Troubleshooting
 

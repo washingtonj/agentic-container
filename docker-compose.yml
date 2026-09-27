@@ -1,11 +1,15 @@
 services:
   orca:
-    image: ghcr.io/washingtonj/orca-devcontainer:latest
+    build:
+      context: .
+      args:
+        ORCA_VERSION: ${ORCA_VERSION:-latest}
+    container_name: orca
     restart: unless-stopped
 
-    mem_limit: 3g
-    memswap_limit: 3g
-    cpus: 1
+    mem_limit: 8gb
+    memswap_limit: 8gb
+    cpus: 2
 
     ports:
       - "${HOST_BIND:-127.0.0.1}:6768:6768"
