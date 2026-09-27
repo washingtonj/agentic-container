@@ -28,6 +28,10 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start |
 | `VOLUME_NAME` | `agentic-container-home` | Engine name of the volume mounted at `/home/agent`; set it to an existing volume to keep that volume's data |
+| `RUNTIME_MEM_LIMIT` | `8gb` | Memory cap for the runtime container; swap disabled |
+| `RUNTIME_CPUS` | `2` | CPU limit for the runtime container; fractions allowed |
+| `SYNCTHING_MEM_LIMIT` | `512m` | Memory cap for the Syncthing container; swap disabled |
+| `SYNCTHING_CPUS` | `0.5` | CPU limit for the Syncthing container; fractions allowed |
 
 ## Runtime: Orca
 

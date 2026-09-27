@@ -9,9 +9,9 @@ services:
     container_name: agentic-container
     restart: unless-stopped
 
-    mem_limit: 8gb
-    memswap_limit: 8gb
-    cpus: 2
+    mem_limit: ${RUNTIME_MEM_LIMIT:-8gb}
+    memswap_limit: ${RUNTIME_MEM_LIMIT:-8gb}
+    cpus: ${RUNTIME_CPUS:-2}
 
     ports:
       - "${HOST_BIND:-127.0.0.1}:${ORCA_PORT:-6768}:${ORCA_PORT:-6768}"
@@ -46,9 +46,9 @@ services:
     image: syncthing/syncthing
     restart: unless-stopped
 
-    mem_limit: 512m
-    memswap_limit: 512m
-    cpus: 0.5
+    mem_limit: ${SYNCTHING_MEM_LIMIT:-512m}
+    memswap_limit: ${SYNCTHING_MEM_LIMIT:-512m}
+    cpus: ${SYNCTHING_CPUS:-0.5}
 
     ports:
       - "${HOST_BIND:-127.0.0.1}:8384:8384"
