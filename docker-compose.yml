@@ -1,10 +1,12 @@
+name: agentic-container
+
 services:
-  orca:
+  runtime:
     build:
       context: .
       args:
         ORCA_VERSION: ${ORCA_VERSION:-latest}
-    container_name: orca
+    container_name: agentic-container
     restart: unless-stopped
 
     mem_limit: 8gb
@@ -12,13 +14,11 @@ services:
     cpus: 2
 
     ports:
-      - "${HOST_BIND:-127.0.0.1}:6768:6768"
+      - "${HOST_BIND:-127.0.0.1}:${ORCA_PORT:-6768}:${ORCA_PORT:-6768}"
       - "${HOST_BIND:-127.0.0.1}:${SSH_HOST_PORT:-2222}:22"
-    expose:
-      - "6768"
 
     environment:
-      ORCA_PORT: "6768"
+      ORCA_PORT: "${ORCA_PORT:-6768}"
       ORCA_PAIRING_ADDRESS: ${ORCA_PAIRING_ADDRESS:-${HOST_BIND:-127.0.0.1}}
       ORCA_JSON: ${ORCA_JSON:-0}
       ORCA_MOBILE_PAIRING: ${ORCA_MOBILE_PAIRING:-0}
@@ -26,7 +26,7 @@ services:
       LIBGL_ALWAYS_SOFTWARE: "1"
 
     volumes:
-      - orca-home:/home/agent
+      - home:/home/agent
 
     security_opt:
       - seccomp:unconfined
@@ -34,7 +34,7 @@ services:
     shm_size: "1gb"
 
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/6768'"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/$${ORCA_PORT}'"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -79,7 +79,8 @@ services:
         exec /bin/entrypoint.sh /bin/syncthing
 
     volumes:
-      - orca-home:/home/agent
+      - home:/home/agent
 
 volumes:
-  orca-home:
+  home:
+    name: ${VOLUME_NAME:-agentic-container-home}

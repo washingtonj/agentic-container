@@ -9,7 +9,7 @@ for dir in "$HOME_DIR/.asdf" "$HOME_DIR/.ssh" "$HOME_DIR/workspace"; do
 done
 
 shopt -s nullglob
-env_files=(/etc/devserver/env.d/*.env)
+env_files=(/etc/agentic-container/env.d/*.env)
 shopt -u nullglob
 
 for env_file in "${env_files[@]}"; do

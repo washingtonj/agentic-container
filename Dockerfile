@@ -27,7 +27,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --uid 1000 --create-home --user-group --shell /bin/bash -p '*' agent \
- && mkdir -p /home/agent/workspace /etc/devserver/env.d \
+ && mkdir -p /home/agent/workspace /etc/agentic-container/env.d \
  && ln -s /home/agent/workspace /workspace
 
 # Build-only scripts are bind-mounted into their RUN, so they never reach the image.
@@ -37,24 +37,21 @@ RUN --mount=type=bind,source=scripts/install-asdf.sh,target=/tmp/install-asdf.sh
 RUN --mount=type=bind,source=scripts/install-ssh.sh,target=/tmp/install-ssh.sh \
     bash /tmp/install-ssh.sh
 
-# ORCA_VERSION is this step's only changing input, so a new release re-runs it and
-# nothing before it; /var/cache/orca reuses .debs already downloaded.
+# Re-runs when ORCA_VERSION or this script changes; /var/cache/orca keeps fetched .debs.
 RUN --mount=type=bind,source=scripts/install-orca.sh,target=/tmp/install-orca.sh \
     --mount=type=cache,target=/var/cache/orca,sharing=locked \
     ORCA_DEB_CACHE=/var/cache/orca ORCA_VERSION="$ORCA_VERSION" \
     bash /tmp/install-orca.sh
 
-# Runtime-only scripts, and the files edited most often, kept last so an edit
-# rebuilds nothing before them.
 COPY --chmod=755 \
     scripts/configure-runtime.sh \
     scripts/configure-ssh.sh \
     scripts/entrypoint.sh \
     scripts/start-orca.sh \
-    /usr/local/lib/devserver/
+    /usr/local/lib/agentic-container/
 
 WORKDIR /home/agent
 
-EXPOSE 22 6768
+EXPOSE 22
 
-ENTRYPOINT ["/usr/local/lib/devserver/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/lib/agentic-container/entrypoint.sh"]

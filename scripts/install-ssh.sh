@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -eu
 
-mkdir -p /etc/devserver
+mkdir -p /etc/agentic-container
 
-cat > /etc/devserver/sshd_config <<'EOF'
+cat > /etc/agentic-container/sshd_config <<'EOF'
 Port 22
 ListenAddress 0.0.0.0
 ListenAddress ::
