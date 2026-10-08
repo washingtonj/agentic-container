@@ -1,14 +1,14 @@
 # agentic-container
 
-Container for leaving coding agents running unattended on a server, with CPU and memory capped in `docker-compose.yml`. IDEs and ADEs attach over its SSH server; Syncthing keeps agent skills and configuration in sync with the local machine; `asdf` installs the languages (`nodejs`, `rust`, ...). The agent runtime is currently [`orca serve`](https://github.com/stablyai/orca), following the official [Headless Linux Server](https://github.com/stablyai/orca/blob/main/docs/reference/headless-linux-server.md) guide; the image is built from this repository and the build resolves the newest Orca release, or the version you pin.
+Container for leaving coding agents running unattended on a server, with CPU and memory capped in `docker-compose.yml`. IDEs and ADEs attach over its SSH server; Syncthing keeps agent skills and configuration in sync with the local machine; `asdf` installs the languages (`nodejs`, `rust`, ...). The agent runtime is currently [`orca serve`](https://github.com/stablyai/orca), following the official [Headless Linux Server](https://github.com/stablyai/orca/blob/main/docs/reference/headless-linux-server.md) guide; the image is built from this repository and the build resolves the newest Orca release, or the version you pin. The image is assembled from [build features](#features) — only `ssh` is on by default — so a container carries the runtime it needs and nothing else.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/washingtonj/agentic-container.git
 cd agentic-container
-cp .env.example .env
-docker compose up -d --build   # first build: apt packages plus the Orca .deb
+cp .env.example .env           # FEATURES selects optional image features
+docker compose up -d --build   # first build installs SSH and selected features
 docker compose logs -f         # pairing URL
 ```
 
@@ -18,6 +18,7 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `FEATURES` | `ssh` | Optional build features, comma-separated — `asdf`, `orca`, `chrome`; SSH is always included; changing it needs a rebuild |
 | `HOST_BIND` | `127.0.0.1` | Host interface all published ports bind to — the runtime, SSH and Syncthing |
 | `SSH_HOST_PORT` | `2222` | Host port mapped to the container SSH port |
 | `ORCA_PORT` | `6768` | Container port for `orca serve`, published on `HOST_BIND` |
@@ -33,9 +34,22 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `SYNCTHING_MEM_LIMIT` | `512m` | Memory cap for the Syncthing container; swap disabled |
 | `SYNCTHING_CPUS` | `0.5` | CPU limit for the Syncthing container; fractions allowed |
 
+## Features
+
+The image is assembled at build time from features, so a container pays only for what it uses. `FEATURES` selects them; SSH is always installed, and `asdf`, `orca` and `chrome` are opt-in. `docker compose up -d --build` applies changes. A container built without `orca` runs no agent — it is the SSH server and whatever the other features put in it.
+
+| Feature | Installs |
+|---|---|
+| `ssh` | Always installed: OpenSSH server and client, plus the sshd config and the runtime key generation behind them |
+| `asdf` | `asdf` and the archive tools its plugins need: `bzip2`, `unzip`, `xz-utils`, `gawk` |
+| `orca` | Orca, with the Chromium/GTK libraries, Xvfb, `xdotool`/`xclip` and AT-SPI that its Electron UI and computer use drive |
+| `chrome` | Debian's Chromium with Liberation fonts — the headless browser MCP servers drive, see [Chrome](#chrome) |
+
+The three scripts carry one step each of the lifecycle: [`scripts/install.sh`](scripts/install.sh) installs a feature at build time, [`scripts/configure.sh`](scripts/configure.sh) prepares the volume and its keys at every container start, and [`scripts/start.sh`](scripts/start.sh) — the entrypoint — runs what is enabled. Each holds one step per feature and skips the features `FEATURES` leaves out; an unknown name fails the build listing what exists. Adding a feature means adding its step to the scripts it needs.
+
 ## Runtime: Orca
 
-[`scripts/install-orca.sh`](scripts/install-orca.sh) installs the upstream .deb at build time, [`scripts/start-orca.sh`](scripts/start-orca.sh) starts it at container start as the unprivileged user `agent`. Orca's Electron UI and computer use account for the desktop packages in the image — Chromium/GTK libraries, Xvfb, and `xdotool` with `python3-gi`; the container itself does not need them.
+[`scripts/install.sh`](scripts/install.sh) installs the upstream .deb at build time, for the `orca` feature; [`scripts/start.sh`](scripts/start.sh) starts it at container start as the unprivileged user `agent`. Orca's Electron UI and computer use account for everything else that feature installs — Chromium/GTK libraries, Xvfb, and `xdotool` with `python3-gi`; without it the image does not need them.
 
 ### Version
 
@@ -51,7 +65,7 @@ Orca only — its layer re-runs, everything before it is reused:
 
 ```bash
 git pull
-ORCA_VERSION=$(scripts/install-orca.sh --print-latest) docker compose up -d --build
+ORCA_VERSION=$(scripts/install.sh --print-latest-orca) docker compose up -d --build
 ```
 
 Every layer, base image and Debian packages included:
@@ -75,6 +89,26 @@ To reach the container from both a LAN and an overlay (VPN / mesh), keep one pai
 - **LAN name** — an `A` record (`orca.home → 192.168.0.10`) in the local DNS. If the overlay client intercepts DNS, add the `home` suffix to its **Local Domain Fallback** at that resolver so the name still resolves locally, keeping traffic on-link. The bare IP needs no DNS.
 - **Overlay name** — a hostname only the overlay resolves to the server's overlay address (e.g. `100.64.0.10`), kept outside the LAN DNS suffix so the entries never collide.
 - **Published ports** — a LAN entry needs them reachable on the LAN: `HOST_BIND=192.168.0.10`. That also exposes SSH and the Syncthing GUI — set `SYNCTHING_USER`/`SYNCTHING_PASSWORD` first.
+
+## Chrome
+
+The `chrome` feature installs Debian's Chromium at `/usr/bin/chromium` — built for both `amd64` and `arm64` — with the Liberation fonts, so pages render text when an agent screenshots them. Nothing starts it: the MCP server launches it on demand.
+
+Point the server at the binary and have it run headless, e.g. [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp) with Node installed through asdf:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--headless",
+               "--executablePath", "/usr/bin/chromium"]
+    }
+  }
+}
+```
+
+`chrome-devtools-mcp` officially supports Google Chrome and Chrome for Testing only; Debian's Chromium speaks the same DevTools protocol but sits outside that support matrix. Run the server as `agent`, not root — Chromium refuses to start as root — and if it reports `No usable sandbox!`, pass `--no-sandbox` through the MCP's browser arguments.
 
 ## Network security
 
@@ -131,7 +165,7 @@ Forward to `localhost`, not `127.0.0.1`: inside the container `localhost` resolv
 
 ### asdf
 
-Installed in the image, no plugins:
+Installed by the `asdf` feature, no plugins:
 
 ```bash
 docker exec -u agent -it agentic-container bash -lc \

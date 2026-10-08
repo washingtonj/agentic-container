@@ -5,6 +5,7 @@ services:
     build:
       context: .
       args:
+        FEATURES: ${FEATURES:-ssh}
         ORCA_VERSION: ${ORCA_VERSION:-latest}
     container_name: agentic-container
     restart: unless-stopped
@@ -34,7 +35,8 @@ services:
     shm_size: "1gb"
 
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/$${ORCA_PORT}'"]
+      # SSH is the one service every build carries.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/22'"]
       interval: 15s
       timeout: 5s
       retries: 10

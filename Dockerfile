@@ -10,48 +10,35 @@ ENV DEBIAN_FRONTEND=noninteractive \
 ARG TARGETARCH
 ARG ORCA_VERSION
 
+# Present in every build: TLS trust for the installers, git and ripgrep for the agent.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-    bzip2 ca-certificates curl gawk git ripgrep unzip xdg-utils xz-utils \
-    openssh-client openssh-server \
-    xvfb zlib1g \
-    libatk-bridge2.0-0t64 libatk1.0-0t64 libgtk-3-0t64 libnotify4 libnss3 \
-    libasound2t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdrm2 libgbm1 \
-    libpango-1.0-0 libsecret-1-0 libx11-xcb1 libxcb-dri3-0 libxcomposite1 libxdamage1 \
-    libxfixes3 libxkbcommon0 libxrandr2 libxrender1 libxss1 libxtst6 \
-    gir1.2-atspi-2.0 python3 python3-gi \
-    xclip xdotool \
- && apt-mark manual libgbm1 libgl1-mesa-dri libglx-mesa0 \
- && dpkg --purge --force-depends libllvm19 mesa-libgallium libz3-4 2>/dev/null || true \
- && rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ecdsa_key /etc/ssh/ssh_host_rsa_key \
+ && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --uid 1000 --create-home --user-group --shell /bin/bash -p '*' agent \
- && mkdir -p /home/agent/workspace /etc/agentic-container/env.d \
+ && mkdir -p /home/agent/workspace /etc/agentic-container/env.d /usr/local/lib/agentic-container \
  && ln -s /home/agent/workspace /workspace
 
-# Build-only scripts are bind-mounted into their RUN, so they never reach the image.
-RUN --mount=type=bind,source=scripts/install-asdf.sh,target=/tmp/install-asdf.sh \
-    TARGETARCH="${TARGETARCH:-amd64}" bash /tmp/install-asdf.sh
+# Comma-separated build features — ssh, asdf, orca, chrome — installed by
+# scripts/install.sh. Only ssh is on by default: everything else costs image
+# size, so it is paid for only where it is used. The runtime scripts read the
+# same list to decide which steps to configure and start.
+ARG FEATURES="ssh"
+ENV FEATURES="${FEATURES}"
 
-RUN --mount=type=bind,source=scripts/install-ssh.sh,target=/tmp/install-ssh.sh \
-    bash /tmp/install-ssh.sh
-
-# Re-runs when ORCA_VERSION or this script changes; /var/cache/orca keeps fetched .debs.
-RUN --mount=type=bind,source=scripts/install-orca.sh,target=/tmp/install-orca.sh \
+# Build-only scripts are bind-mounted into their RUN, so they never reach the
+# image. The orca cache mount keeps already-fetched Orca .debs across rebuilds.
+RUN --mount=type=bind,source=scripts,target=/tmp/scripts \
     --mount=type=cache,target=/var/cache/orca,sharing=locked \
-    ORCA_DEB_CACHE=/var/cache/orca ORCA_VERSION="$ORCA_VERSION" \
-    bash /tmp/install-orca.sh
+    ORCA_DEB_CACHE=/var/cache/orca bash /tmp/scripts/install.sh
 
 COPY --chmod=755 \
-    scripts/configure-runtime.sh \
-    scripts/configure-ssh.sh \
-    scripts/entrypoint.sh \
-    scripts/start-orca.sh \
+    scripts/configure.sh \
+    scripts/start.sh \
     /usr/local/lib/agentic-container/
 
 WORKDIR /home/agent
 
 EXPOSE 22
 
-ENTRYPOINT ["/usr/local/lib/agentic-container/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/lib/agentic-container/start.sh"]
