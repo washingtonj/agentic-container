@@ -26,6 +26,13 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `ORCA_JSON` | `0` | Pass `--json` to `serve` |
 | `ORCA_MOBILE_PAIRING` | `0` | Enable `--mobile-pairing` |
 | `ORCA_NO_SANDBOX` | `0` | Enable only if Chromium reports sandbox errors |
+| `OPENCODE_MCP_BROWSER` | `0` | Add the browser MCP endpoint to OpenCode config; start with Compose profile `mcp-browser` |
+| `OPENCODE_MCP_ANDROID` | `0` | Add the Android MCP endpoint to OpenCode config; start with Compose profile `mcp-android` |
+| `BROWSER_MEM_LIMIT` / `BROWSER_CPUS` | `2gb` / `1` | Browser MCP container resource caps |
+| `ANDROID_EMULATOR_IMAGE` | `budtmo/docker-android:emulator_14.0` | Android emulator image tag |
+| `ANDROID_EMULATOR_DEVICE` | `Samsung Galaxy S10` | Device profile passed to Docker-Android |
+| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `3gb` / `2` | Emulator resource caps |
+| `ANDROID_MCP_MEM_LIMIT` / `ANDROID_MCP_CPUS` | `512m` / `0.5` | Android MCP server resource caps |
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start |
 | `VOLUME_NAME` | `agentic-container-home` | Engine name of the volume mounted at `/home/agent`; set it to an existing volume to keep that volume's data |
@@ -43,7 +50,7 @@ The image is assembled at build time from features, so a container pays only for
 | `ssh` | Always installed: OpenSSH server and client, plus the sshd config and the runtime key generation behind them |
 | `asdf` | `asdf` and the archive tools its plugins need: `bzip2`, `unzip`, `xz-utils`, `gawk` |
 | `orca` | Orca, with the Chromium/GTK libraries, Xvfb, `xdotool`/`xclip` and AT-SPI that its Electron UI and computer use drive |
-| `chrome` | Debian's Chromium with Liberation fonts — the headless browser MCP servers drive, see [Chrome](#chrome) |
+| `chrome` | Debian's Chromium with Liberation fonts — the headless browser MCP servers drive, see [Browser and Android MCP](#browser-and-android-mcp) |
 
 The three scripts carry one step each of the lifecycle: [`scripts/install.sh`](scripts/install.sh) installs a feature at build time, [`scripts/configure.sh`](scripts/configure.sh) prepares the volume and its keys at every container start, and [`scripts/start.sh`](scripts/start.sh) — the entrypoint — runs what is enabled. Each holds one step per feature and skips the features `FEATURES` leaves out; an unknown name fails the build listing what exists. Adding a feature means adding its step to the scripts it needs.
 
@@ -90,25 +97,29 @@ To reach the container from both a LAN and an overlay (VPN / mesh), keep one pai
 - **Overlay name** — a hostname only the overlay resolves to the server's overlay address (e.g. `100.64.0.10`), kept outside the LAN DNS suffix so the entries never collide.
 - **Published ports** — a LAN entry needs them reachable on the LAN: `HOST_BIND=192.168.0.10`. That also exposes SSH and the Syncthing GUI — set `SYNCTHING_USER`/`SYNCTHING_PASSWORD` first.
 
-## Chrome
+## Browser and Android MCP
 
-The `chrome` feature installs Debian's Chromium at `/usr/bin/chromium` — built for both `amd64` and `arm64` — with the Liberation fonts, so pages render text when an agent screenshots them. Nothing starts it: the MCP server launches it on demand.
+The MCP services are opt-in Compose profiles, separate from the runtime image. OpenCode MCP entries are merged into `/home/agent/.config/opencode/opencode.json` when `orca` is enabled and the corresponding `OPENCODE_MCP_*` option is `1`; existing OpenCode settings are preserved. Orca agents can reach the services by Compose DNS name.
 
-Point the server at the binary and have it run headless, e.g. [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp) with Node installed through asdf:
+Enable browser MCP:
 
-```json
-{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--headless",
-               "--executablePath", "/usr/bin/chromium"]
-    }
-  }
-}
+```bash
+OPENCODE_MCP_BROWSER=1 docker compose --profile mcp-browser up -d
 ```
 
-`chrome-devtools-mcp` officially supports Google Chrome and Chrome for Testing only; Debian's Chromium speaks the same DevTools protocol but sits outside that support matrix. Run the server as `agent`, not root — Chromium refuses to start as root — and if it reports `No usable sandbox!`, pass `--no-sandbox` through the MCP's browser arguments.
+This starts the official Playwright MCP container with headless Chromium. It exposes MCP internally at `http://browser-mcp:8931/mcp`; no host port is published.
+
+Enable Android MCP:
+
+```bash
+OPENCODE_MCP_ANDROID=1 docker compose --profile mcp-android up -d
+```
+
+This starts the Android 14 emulator and Docker-Android's MCP service. The MCP service connects to the emulator over ADB and is available internally at `http://android-mcp:8000/mcp`. Android automation in this upstream MCP image currently includes device listing, app launch, opening URLs, foreground-window inspection, hardware buttons, and waits. Its MCP endpoint has no authentication, so keep it on the private Compose network. ADB is exposed only between Compose services.
+
+For both, set both options and start both profiles. The runtime must include the `orca` feature for automatic OpenCode configuration. To use another MCP client, configure its remote MCP entry with the same endpoint URL; client config formats vary, and `mcp.json` is not a universal format. Starting a profile without setting its matching OpenCode option starts the service but does not add it to OpenCode config.
+
+Docker-Android requires Linux and `/dev/kvm`; this setup passes the host device through. Emulator state is ephemeral by default. Resource limits can be adjusted with the variables in the configuration table.
 
 ## Network security
 
