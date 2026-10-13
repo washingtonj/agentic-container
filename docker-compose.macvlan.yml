@@ -1,0 +1,13 @@
+services:
+  runtime:
+    ports: !reset []
+    networks:
+      default: {}
+      lan_macvlan:
+        gw_priority: 1
+
+networks:
+  default: {}
+  lan_macvlan:
+    external: true
+    name: ${MACVLAN_NETWORK:-lan_macvlan}

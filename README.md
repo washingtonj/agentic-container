@@ -30,8 +30,10 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `OPENCODE_MCP_ANDROID` | `0` | Add the Android MCP endpoint to OpenCode config; start with Compose profile `mcp-android` |
 | `BROWSER_MEM_LIMIT` / `BROWSER_CPUS` | `2gb` / `1` | Browser MCP container resource caps |
 | `ANDROID_EMULATOR_IMAGE` | `budtmo/docker-android:emulator_14.0` | Android emulator image tag |
-| `ANDROID_EMULATOR_DEVICE` | `Samsung Galaxy S10` | Device profile passed to Docker-Android |
-| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `3gb` / `2` | Emulator resource caps |
+| `ANDROID_EMULATOR_DEVICE` | `Nexus 5` | Device profile passed to Docker-Android |
+| `ANDROID_EMULATOR_ARGS` | `-no-boot-anim -no-snapshot` | Additional emulator startup arguments |
+| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `6gb` / `3` | Emulator resource caps |
+| `MACVLAN_NETWORK` | `lan_macvlan` | Existing external Docker macvlan network used by the runtime override |
 | `ANDROID_MCP_MEM_LIMIT` / `ANDROID_MCP_CPUS` | `512m` / `0.5` | Android MCP server resource caps |
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start |
@@ -96,6 +98,18 @@ To reach the container from both a LAN and an overlay (VPN / mesh), keep one pai
 - **LAN name** — an `A` record (`orca.home → 192.168.0.10`) in the local DNS. If the overlay client intercepts DNS, add the `home` suffix to its **Local Domain Fallback** at that resolver so the name still resolves locally, keeping traffic on-link. The bare IP needs no DNS.
 - **Overlay name** — a hostname only the overlay resolves to the server's overlay address (e.g. `100.64.0.10`), kept outside the LAN DNS suffix so the entries never collide.
 - **Published ports** — a LAN entry needs them reachable on the LAN: `HOST_BIND=192.168.0.10`. That also exposes SSH and the Syncthing GUI — set `SYNCTHING_USER`/`SYNCTHING_PASSWORD` first.
+
+## Optional LAN macvlan
+
+To give only the runtime a LAN address while keeping container-to-container traffic on the private Compose bridge, first create a macvlan Docker network for your LAN. The override uses the existing network `lan_macvlan` by default; set `MACVLAN_NETWORK` in `.env` only if your network has a different name. Its parent interface, subnet, gateway, and address pool stay owned by that Docker network, avoiding a second overlapping macvlan configuration.
+
+The runtime receives an IP from that network's address pool. Reserve the assigned IP in your LAN DHCP configuration if it needs to stay stable. Then start with the macvlan override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.macvlan.yml up -d --build
+```
+
+Only `runtime` joins the macvlan; it also stays on the default Compose bridge. With this override, the runtime's host-published port mappings are removed: reach its listening ports directly at its macvlan IP. Syncthing and the browser/Android MCP services remain on the bridge, with no auxiliary MCP ports published on the host or LAN. To disable macvlan, omit the override file. Docker macvlan normally prevents direct communication between the host and its macvlan containers.
 
 ## Browser and Android MCP
 

@@ -54,6 +54,12 @@ services:
     mem_limit: ${BROWSER_MEM_LIMIT:-2gb}
     memswap_limit: ${BROWSER_MEM_LIMIT:-2gb}
     cpus: ${BROWSER_CPUS:-1}
+    pids_limit: ${BROWSER_PIDS_LIMIT:-256}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-3}
     expose:
       - "8931"
     shm_size: "1gb"
@@ -63,15 +69,22 @@ services:
     profiles: [mcp-android]
     restart: unless-stopped
     environment:
-      EMULATOR_DEVICE: ${ANDROID_EMULATOR_DEVICE:-Samsung Galaxy S10}
+      EMULATOR_DEVICE: ${ANDROID_EMULATOR_DEVICE:-Nexus 5}
+      EMULATOR_ADDITIONAL_ARGS: ${ANDROID_EMULATOR_ARGS:--no-boot-anim -no-snapshot}
       WEB_VNC: "false"
     devices:
       - /dev/kvm:/dev/kvm
     expose:
       - "5555"
-    mem_limit: ${ANDROID_MEM_LIMIT:-3gb}
-    memswap_limit: ${ANDROID_MEM_LIMIT:-3gb}
-    cpus: ${ANDROID_CPUS:-2}
+    mem_limit: ${ANDROID_MEM_LIMIT:-6gb}
+    memswap_limit: ${ANDROID_MEM_LIMIT:-6gb}
+    cpus: ${ANDROID_CPUS:-3}
+    pids_limit: ${ANDROID_PIDS_LIMIT:-512}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-3}
     shm_size: "2gb"
 
   android-mcp:
@@ -91,6 +104,12 @@ services:
     mem_limit: ${ANDROID_MCP_MEM_LIMIT:-512m}
     memswap_limit: ${ANDROID_MCP_MEM_LIMIT:-512m}
     cpus: ${ANDROID_MCP_CPUS:-0.5}
+    pids_limit: ${ANDROID_MCP_PIDS_LIMIT:-128}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-3}
 
   # Peer-to-peer sync between this host and a local client, used to keep
   # agent skills and related config in sync across machines.
