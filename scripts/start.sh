@@ -62,13 +62,13 @@ start_orca() {
 # neither enabled, the container stays up for whatever the other features need.
 if enabled orca; then
   if enabled ssh; then
-    sshd -f "$sshd_config" -E /dev/stderr
+    /usr/sbin/sshd -f "$sshd_config" -E /dev/stderr
   fi
   start_orca
 fi
 
 if enabled ssh; then
-  exec sshd -D -f "$sshd_config" -E /dev/stderr
+  exec /usr/sbin/sshd -D -f "$sshd_config" -E /dev/stderr
 fi
 
 exec sleep infinity

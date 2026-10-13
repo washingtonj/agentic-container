@@ -10,6 +10,17 @@ services:
         # which can change on every `up` and break anything pointing at it.
         ipv4_address: ${MACVLAN_IPV4_ADDRESS:-}
 
+  # Only the runtime moves to the LAN. The other services keep their published
+  # ports, but HOST_BIND is the runtime's macvlan address, which this host
+  # cannot bind to — the bridge has no use for a LAN-reachable Syncthing GUI,
+  # so publish these on loopback and reach them over SSH.
+  syncthing:
+    ports: !override
+      - "127.0.0.1:${SYNCTHING_GUI_HOST_PORT:-8384}:8384"
+      - "127.0.0.1:${SYNCTHING_SYNC_HOST_PORT:-22000}:22000/tcp"
+      - "127.0.0.1:${SYNCTHING_SYNC_HOST_PORT:-22000}:22000/udp"
+      - "127.0.0.1:${SYNCTHING_DISCOVERY_HOST_PORT:-21027}:21027/udp"
+
 networks:
   default: {}
   lan_macvlan:

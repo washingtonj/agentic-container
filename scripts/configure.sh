@@ -79,13 +79,21 @@ configure_adb() {
   local emulator="$ANDROID_EMULATOR_HOST:5555"
   runuser -u agent -- adb start-server >/dev/null 2>&1 || true
 
-  local attempt
+  # `adb connect` exits 0 even when it prints "failed to connect", so the exit
+  # status says nothing; the reported state is what counts.
+  local attempt output state
   for attempt in 1 2 3; do
-    if runuser -u agent -- adb connect "$emulator" 2>/dev/null; then
-      echo "[adb] Connected to $emulator."
+    output=$(runuser -u agent -- adb connect "$emulator" 2>&1 || true)
+    echo "[adb] $output"
+
+    state=$(runuser -u agent -- adb devices 2>/dev/null \
+      | awk -v target="$emulator" '$1 == target && $2 == "device" { print "ok" }')
+    if [[ -n "$state" ]]; then
+      echo "[adb] $emulator is ready."
       return 0
     fi
-    echo "[adb] $emulator not reachable yet (attempt $attempt/3)."
+
+    echo "[adb] $emulator not ready yet (attempt $attempt/3)."
     sleep 10
   done
 

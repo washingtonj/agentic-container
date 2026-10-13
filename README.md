@@ -35,6 +35,7 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `3gb` / `2` | Emulator resource caps |
 | `MACVLAN_NETWORK` | `lan_macvlan` | Existing external Docker macvlan network used by the runtime override |
 | `MACVLAN_IPV4_ADDRESS` | (empty) | Fixed address for the runtime on that network; empty takes the next free address from the pool, which can change between `up`s |
+| `SYNCTHING_GUI_HOST_PORT` / `SYNCTHING_SYNC_HOST_PORT` / `SYNCTHING_DISCOVERY_HOST_PORT` | `8384` / `22000` / `21027` | Host ports for Syncthing under the macvlan override, where they bind to loopback |
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start |
 | `VOLUME_NAME` | `agentic-container-home` | Engine name of the volume mounted at `/home/agent`; set it to an existing volume to keep that volume's data |
@@ -110,7 +111,15 @@ The runtime receives an IP from that network's address pool. Reserve the assigne
 docker compose -f docker-compose.yml -f docker-compose.macvlan.yml up -d --build
 ```
 
-Only `runtime` joins the macvlan; it also stays on the default Compose bridge. With this override, the runtime's host-published port mappings are removed: reach its listening ports directly at its macvlan IP. Syncthing and the browser/Android MCP services remain on the bridge, with no auxiliary MCP ports published on the host or LAN. To disable macvlan, omit the override file. Docker macvlan normally prevents direct communication between the host and its macvlan containers.
+Only `runtime` joins the macvlan; it also stays on the default Compose bridge. With this override, the runtime's host-published port mappings are removed: reach its listening ports directly at its macvlan IP. Syncthing and the browser/Android services remain on the bridge, with no auxiliary MCP ports published on the host or LAN. To disable macvlan, omit the override file. Docker macvlan normally prevents direct communication between the host and its macvlan containers.
+
+Syncthing keeps its GUI and sync ports, but the override publishes them on `127.0.0.1` rather than `HOST_BIND`. `HOST_BIND` is the runtime's own macvlan address, which the Docker bridge cannot bind to — starting with the override and the stock port mapping fails with `cannot assign requested address`. The Syncthing GUI stays off the LAN either way; reach it over SSH:
+
+```bash
+ssh -N -p 2222 -i ~/.ssh/agentic-container_client_key -L 8384:localhost:8384 agent@<host>
+```
+
+Override the host ports with `SYNCTHING_GUI_HOST_PORT`, `SYNCTHING_SYNC_HOST_PORT` and `SYNCTHING_DISCOVERY_HOST_PORT` if 8384, 22000 or 21027 are taken on the host.
 
 ## Browser MCP
 
