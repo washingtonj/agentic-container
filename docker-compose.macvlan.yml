@@ -5,6 +5,10 @@ services:
       default: {}
       lan_macvlan:
         gw_priority: 1
+        # Pin the address so it stays stable across recreations. Left unset the
+        # runtime takes the next free address from the Docker network's pool,
+        # which can change on every `up` and break anything pointing at it.
+        ipv4_address: ${MACVLAN_IPV4_ADDRESS:-}
 
 networks:
   default: {}

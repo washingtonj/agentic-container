@@ -25,7 +25,7 @@ services:
       ORCA_MOBILE_PAIRING: ${ORCA_MOBILE_PAIRING:-0}
       ORCA_NO_SANDBOX: ${ORCA_NO_SANDBOX:-0}
       OPENCODE_MCP_BROWSER: ${OPENCODE_MCP_BROWSER:-0}
-      OPENCODE_MCP_ANDROID: ${OPENCODE_MCP_ANDROID:-0}
+      ANDROID_EMULATOR_HOST: ${ANDROID_EMULATOR_HOST:-android-emulator}
       LIBGL_ALWAYS_SOFTWARE: "1"
 
     volumes:
@@ -64,52 +64,33 @@ services:
       - "8931"
     shm_size: "1gb"
 
+  # The emulator runs headless under its own Compose service; the runtime
+  # reaches it over ADB with the `adb` feature, which needs no MCP server.
   android-emulator:
     image: ${ANDROID_EMULATOR_IMAGE:-budtmo/docker-android:emulator_14.0}
     profiles: [mcp-android]
     restart: unless-stopped
     environment:
       EMULATOR_DEVICE: ${ANDROID_EMULATOR_DEVICE:-Nexus 5}
-      EMULATOR_ADDITIONAL_ARGS: ${ANDROID_EMULATOR_ARGS:--no-boot-anim -no-snapshot}
-      WEB_VNC: "false"
+      # The guest heap is what grows: the default profile asks for more RAM
+      # than a small host can spare, and the container then sits at its memory
+      # ceiling swapping. 3072 keeps a headless API 34 image responsive while
+      # leaving headroom under the container cap for QEMU's own overhead.
+      EMULATOR_ADDITIONAL_ARGS: ${ANDROID_EMULATOR_ARGS:--no-boot-anim -no-snapshot -no-audio -memory 3072 -cores 2}
     devices:
       - /dev/kvm:/dev/kvm
     expose:
       - "5555"
-    mem_limit: ${ANDROID_MEM_LIMIT:-6gb}
-    memswap_limit: ${ANDROID_MEM_LIMIT:-6gb}
-    cpus: ${ANDROID_CPUS:-3}
-    pids_limit: ${ANDROID_PIDS_LIMIT:-512}
+    mem_limit: ${ANDROID_MEM_LIMIT:-4gb}
+    memswap_limit: ${ANDROID_MEM_LIMIT:-4gb}
+    cpus: ${ANDROID_CPUS:-2}
+    pids_limit: ${ANDROID_PIDS_LIMIT:-256}
     logging:
       driver: json-file
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-3}
-    shm_size: "2gb"
-
-  android-mcp:
-    image: budtmo/docker-android:mcp
-    profiles: [mcp-android]
-    restart: unless-stopped
-    environment:
-      EMULATOR_HOST: android-emulator
-      EMULATOR_PORT: "5555"
-      MCP_HOST: 0.0.0.0
-      MCP_PORT: "8000"
-    depends_on:
-      android-emulator:
-        condition: service_started
-    expose:
-      - "8000"
-    mem_limit: ${ANDROID_MCP_MEM_LIMIT:-512m}
-    memswap_limit: ${ANDROID_MCP_MEM_LIMIT:-512m}
-    cpus: ${ANDROID_MCP_CPUS:-0.5}
-    pids_limit: ${ANDROID_MCP_PIDS_LIMIT:-128}
-    logging:
-      driver: json-file
-      options:
-        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
-        max-file: ${CONTAINER_LOG_MAX_FILES:-3}
+    shm_size: "1gb"
 
   # Peer-to-peer sync between this host and a local client, used to keep
   # agent skills and related config in sync across machines.

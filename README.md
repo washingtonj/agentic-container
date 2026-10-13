@@ -18,7 +18,7 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FEATURES` | `ssh` | Optional build features, comma-separated — `asdf`, `orca`, `chrome`; SSH is always included; changing it needs a rebuild |
+| `FEATURES` | `ssh` | Optional build features, comma-separated — `asdf`, `orca`, `chrome`, `adb`; SSH is always included; changing it needs a rebuild |
 | `HOST_BIND` | `127.0.0.1` | Host interface all published ports bind to — the runtime, SSH and Syncthing |
 | `SSH_HOST_PORT` | `2222` | Host port mapped to the container SSH port |
 | `ORCA_PORT` | `6768` | Container port for `orca serve`, published on `HOST_BIND` |
@@ -27,14 +27,14 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `ORCA_MOBILE_PAIRING` | `0` | Enable `--mobile-pairing` |
 | `ORCA_NO_SANDBOX` | `0` | Enable only if Chromium reports sandbox errors |
 | `OPENCODE_MCP_BROWSER` | `0` | Add the browser MCP endpoint to OpenCode config; start with Compose profile `mcp-browser` |
-| `OPENCODE_MCP_ANDROID` | `0` | Add the Android MCP endpoint to OpenCode config; start with Compose profile `mcp-android` |
+| `ANDROID_EMULATOR_HOST` | `android-emulator` | Compose service name the `adb` feature connects to; unset the variable to skip connecting |
 | `BROWSER_MEM_LIMIT` / `BROWSER_CPUS` | `2gb` / `1` | Browser MCP container resource caps |
 | `ANDROID_EMULATOR_IMAGE` | `budtmo/docker-android:emulator_14.0` | Android emulator image tag |
 | `ANDROID_EMULATOR_DEVICE` | `Nexus 5` | Device profile passed to Docker-Android |
 | `ANDROID_EMULATOR_ARGS` | `-no-boot-anim -no-snapshot` | Additional emulator startup arguments |
-| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `6gb` / `3` | Emulator resource caps |
+| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `3gb` / `2` | Emulator resource caps |
 | `MACVLAN_NETWORK` | `lan_macvlan` | Existing external Docker macvlan network used by the runtime override |
-| `ANDROID_MCP_MEM_LIMIT` / `ANDROID_MCP_CPUS` | `512m` / `0.5` | Android MCP server resource caps |
+| `MACVLAN_IPV4_ADDRESS` | (empty) | Fixed address for the runtime on that network; empty takes the next free address from the pool, which can change between `up`s |
 | `SYNCTHING_USER` | (empty) | Syncthing GUI username; set together with the password to require auth |
 | `SYNCTHING_PASSWORD` | (empty) | Syncthing GUI password, applied at container start |
 | `VOLUME_NAME` | `agentic-container-home` | Engine name of the volume mounted at `/home/agent`; set it to an existing volume to keep that volume's data |
@@ -52,7 +52,8 @@ The image is assembled at build time from features, so a container pays only for
 | `ssh` | Always installed: OpenSSH server and client, plus the sshd config and the runtime key generation behind them |
 | `asdf` | `asdf` and the archive tools its plugins need: `bzip2`, `unzip`, `xz-utils`, `gawk` |
 | `orca` | Orca, with the Chromium/GTK libraries, Xvfb, `xdotool`/`xclip` and AT-SPI that its Electron UI and computer use drive |
-| `chrome` | Debian's Chromium with Liberation fonts — the headless browser MCP servers drive, see [Browser and Android MCP](#browser-and-android-mcp) |
+| `chrome` | Debian's Chromium with Liberation fonts — the headless browser MCP server drives, see [Browser MCP](#browser-mcp) |
+| `adb` | The `adb` client, so the agent drives the Android emulator over ADB instead of through an MCP server — see [Android emulator](#android-emulator) |
 
 The three scripts carry one step each of the lifecycle: [`scripts/install.sh`](scripts/install.sh) installs a feature at build time, [`scripts/configure.sh`](scripts/configure.sh) prepares the volume and its keys at every container start, and [`scripts/start.sh`](scripts/start.sh) — the entrypoint — runs what is enabled. Each holds one step per feature and skips the features `FEATURES` leaves out; an unknown name fails the build listing what exists. Adding a feature means adding its step to the scripts it needs.
 
@@ -103,7 +104,7 @@ To reach the container from both a LAN and an overlay (VPN / mesh), keep one pai
 
 To give only the runtime a LAN address while keeping container-to-container traffic on the private Compose bridge, first create a macvlan Docker network for your LAN. The override uses the existing network `lan_macvlan` by default; set `MACVLAN_NETWORK` in `.env` only if your network has a different name. Its parent interface, subnet, gateway, and address pool stay owned by that Docker network, avoiding a second overlapping macvlan configuration.
 
-The runtime receives an IP from that network's address pool. Reserve the assigned IP in your LAN DHCP configuration if it needs to stay stable. Then start with the macvlan override:
+The runtime receives an IP from that network's address pool. Reserve the assigned IP in your LAN DHCP configuration if it needs to stay stable, and pin it with `MACVLAN_IPV4_ADDRESS` so a recreate does not silently move it. Then start with the macvlan override:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.macvlan.yml up -d --build
@@ -111,29 +112,60 @@ docker compose -f docker-compose.yml -f docker-compose.macvlan.yml up -d --build
 
 Only `runtime` joins the macvlan; it also stays on the default Compose bridge. With this override, the runtime's host-published port mappings are removed: reach its listening ports directly at its macvlan IP. Syncthing and the browser/Android MCP services remain on the bridge, with no auxiliary MCP ports published on the host or LAN. To disable macvlan, omit the override file. Docker macvlan normally prevents direct communication between the host and its macvlan containers.
 
-## Browser and Android MCP
+## Browser MCP
 
-The MCP services are opt-in Compose profiles, separate from the runtime image. OpenCode MCP entries are merged into `/home/agent/.config/opencode/opencode.json` when `orca` is enabled and the corresponding `OPENCODE_MCP_*` option is `1`; existing OpenCode settings are preserved. Orca agents can reach the services by Compose DNS name.
-
-Enable browser MCP:
+The browser MCP service is an opt-in Compose profile, separate from the runtime image. The OpenCode MCP entry is merged into `/home/agent/.config/opencode/opencode.json` when `orca` is enabled and `OPENCODE_MCP_BROWSER` is `1`; existing OpenCode settings are preserved. Orca agents can reach the service by Compose DNS name.
 
 ```bash
 OPENCODE_MCP_BROWSER=1 docker compose --profile mcp-browser up -d
 ```
 
-This starts the official Playwright MCP container with headless Chromium. It exposes MCP internally at `http://browser-mcp:8931/mcp`; no host port is published.
+This starts the official Playwright MCP container with headless Chromium. It exposes MCP internally at `http://browser-mcp:8931/mcp`; no host port is published. Starting the profile without setting `OPENCODE_MCP_BROWSER` starts the service but does not add it to OpenCode config.
 
-Enable Android MCP:
+## Android emulator
+
+The emulator is an opt-in Compose profile (`mcp-android`) that runs headless in its own container; the runtime drives it over ADB rather than through an MCP server. Enable the `adb` build feature and start the profile:
 
 ```bash
-OPENCODE_MCP_ANDROID=1 docker compose --profile mcp-android up -d
+FEATURES=ssh,orca,adb docker compose --profile mcp-android up -d
 ```
 
-This starts the Android 14 emulator and Docker-Android's MCP service. The MCP service connects to the emulator over ADB and is available internally at `http://android-mcp:8000/mcp`. Android automation in this upstream MCP image currently includes device listing, app launch, opening URLs, foreground-window inspection, hardware buttons, and waits. Its MCP endpoint has no authentication, so keep it on the private Compose network. ADB is exposed only between Compose services.
+`ANDROID_EMULATOR_HOST` (default `android-emulator`) is the Compose service name the runtime connects to at start. Unset it to skip the automatic connect. The emulator's ADB server binds to the address it had when the emulator container started, so it is reachable by service name but not by container IP — connect by name, not address.
 
-For both, set both options and start both profiles. The runtime must include the `orca` feature for automatic OpenCode configuration. To use another MCP client, configure its remote MCP entry with the same endpoint URL; client config formats vary, and `mcp.json` is not a universal format. Starting a profile without setting its matching OpenCode option starts the service but does not add it to OpenCode config.
+At start the runtime retries `adb connect` three times; the emulator takes a few minutes to boot, so a first failure is normal. Reconnect from an agent shell with `adb connect "$ANDROID_EMULATOR_HOST:5555"`. From there the emulator is an ordinary ADB target:
 
-Docker-Android requires Linux and `/dev/kvm`; this setup passes the host device through. Emulator state is ephemeral by default. Resource limits can be adjusted with the variables in the configuration table.
+```bash
+adb devices
+adb shell getprop ro.build.version.release
+adb install -r app.apk
+adb shell am start -n com.example/.MainActivity
+adb exec-out screencap -p > screen.png
+```
+
+`scrcpy` drives the screen over the same connection.
+
+ADB gives the agent the full shell, package installer and `am`/`input` tooling, which the previous Android MCP service exposed only a small subset of — device listing, app launch, URL opening, foreground inspection, hardware buttons and waits — at the cost of a second image and a service to keep alive. Because the connection is plain ADB over the private Compose network with no HTTP endpoint, there is nothing extra to secure or publish.
+
+### Resource use
+
+The emulator is the heaviest service in the stack and the usual cause of a slow host. Two settings control its footprint, and they are not interchangeable:
+
+- `ANDROID_EMULATOR_ARGS` sets the **guest heap** (`-memory`, `-cores`) the Android system sees. This is the main lever. The stock device profile asks for more RAM than a small host can spare, and the emulator then sits at its container's memory ceiling swapping — which reads as "the emulator is slow" but is really memory pressure.
+- `ANDROID_MEM_LIMIT` caps what the **container** may use. A cap alone does not make the emulator faster: it only converts excess use into an OOM kill. The guest heap has to be sized to fit inside it.
+
+Measured on a 14GB host with an API 34 image, at idle:
+
+| Guest heap | Container use | CPU |
+|---|---|---|
+| stock profile | 5.49 GiB of a 6 GiB cap (91%) | 36% |
+| `-memory 2048 -cores 2` | 3.21 GiB of 4 GiB | 6% |
+| `-memory 3072 -cores 2` | 3.12 GiB of 4 GiB | 6% |
+
+The default is `-memory 3072 -cores 2` under a 4GB cap. Going below 3072 buys nothing here — both sizes settle near 3.1GB, because QEMU's own overhead, not the guest heap, sets the floor. If the host has less memory, lower `ANDROID_MEM_LIMIT` *and* the heap together.
+
+The runtime runs several agents at once (Orca, OpenCode, a browser), so it is the other large consumer; see `RUNTIME_MEM_LIMIT`. Keep the sum of the caps below the host's physical memory — an over-committed host does not get slower gracefully, it starts swapping and everything stalls at once.
+
+Docker-Android requires Linux and `/dev/kvm`; this setup passes the host device through. Emulator state is ephemeral by default.
 
 ## Network security
 

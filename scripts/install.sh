@@ -128,6 +128,15 @@ install_orca() {
   echo "Installed Orca $version at /opt/Orca"
 }
 
+install_adb() {
+  # The adb client the agent drives the emulator with; the emulator itself runs
+  # in its own container and is reached over TCP. The Debian package tracks the
+  # platform-tools major version, so it matches an API 34 emulator.
+  apt-get install -y --no-install-recommends adb
+
+  adb version
+}
+
 install_chrome() {
   # Debian builds Chromium for both amd64 and arm64; the fonts keep screenshots
   # from rendering text as boxes.
@@ -161,8 +170,9 @@ for feature in ${features//,/ }; do
     asdf) install_asdf ;;
     orca) install_orca ;;
     chrome) install_chrome ;;
+    adb) install_adb ;;
     *)
-      echo "Unknown feature '$feature'. Available: ssh asdf orca chrome" >&2
+      echo "Unknown feature '$feature'. Available: ssh asdf orca chrome adb" >&2
       exit 1
       ;;
   esac

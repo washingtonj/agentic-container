@@ -33,14 +33,6 @@ if os.environ.get("OPENCODE_MCP_BROWSER") == "1":
     }
 else:
     servers.pop("agentic-container-browser", None)
-if os.environ.get("OPENCODE_MCP_ANDROID") == "1":
-    servers["agentic-container-android"] = {
-        "type": "remote",
-        "url": "http://android-mcp:8000/mcp",
-        "enabled": True,
-    }
-else:
-    servers.pop("agentic-container-android", None)
 
 config_path.write_text(json.dumps(config, indent=2) + "\n")
 PY
@@ -77,6 +69,31 @@ configure_ssh() {
   sshd -t -f /etc/agentic-container/sshd_config
 }
 
+# The emulator's adb server binds to the address it had when the emulator
+# container started, so it is only reachable by the Compose service name. The
+# connection is best-effort: the emulator boots for minutes after the runtime
+# and may not be running at all, and the agent can always re-run `adb connect`.
+configure_adb() {
+  [[ -n "${ANDROID_EMULATOR_HOST:-}" ]] || return 0
+
+  local emulator="$ANDROID_EMULATOR_HOST:5555"
+  runuser -u agent -- adb start-server >/dev/null 2>&1 || true
+
+  local attempt
+  for attempt in 1 2 3; do
+    if runuser -u agent -- adb connect "$emulator" 2>/dev/null; then
+      echo "[adb] Connected to $emulator."
+      return 0
+    fi
+    echo "[adb] $emulator not reachable yet (attempt $attempt/3)."
+    sleep 10
+  done
+
+  echo "[adb] Could not reach $emulator. The emulator may still be booting;"
+  echo "[adb] run 'adb connect $emulator' from the agent shell once it is up."
+  return 0
+}
+
 # The volume hides whatever the image had under /home/agent, so these come back
 # on every start, owned by the agent.
 for dir in "$HOME_DIR/.asdf" "$HOME_DIR/workspace"; do
@@ -101,5 +118,6 @@ for feature in ${features//,/ }; do
   case "$feature" in
     ssh) configure_ssh ;;
     orca) configure_opencode_mcp ;;
+    adb) configure_adb ;;
   esac
 done
