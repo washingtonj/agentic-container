@@ -86,7 +86,11 @@ services:
     mem_limit: ${ANDROID_MEM_LIMIT:-5gb}
     memswap_limit: ${ANDROID_MEM_LIMIT:-5gb}
     cpus: ${ANDROID_CPUS:-2}
-    pids_limit: ${ANDROID_PIDS_LIMIT:-256}
+    # The emulator forks a lot: QEMU threads plus the supervisor's appium,
+    # VNC and log processes. At 256 the launcher dies with
+    # "BlockingIOError: [Errno 11] Resource temporarily unavailable" and the
+    # emulator never boots, with no hint in the container logs.
+    pids_limit: ${ANDROID_PIDS_LIMIT:-1024}
     logging:
       driver: json-file
       options:
