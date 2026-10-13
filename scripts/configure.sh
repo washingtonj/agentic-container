@@ -34,6 +34,17 @@ if os.environ.get("OPENCODE_MCP_BROWSER") == "1":
 else:
     servers.pop("agentic-container-browser", None)
 
+# The android-mcp service is gone: the emulator is driven over ADB now, so
+# drop any entry left pointing at its endpoint rather than leaving the agent
+# with a server that never connects.
+servers.pop("agentic-container-android", None)
+
+# Written directly under `mcp` by an earlier revision, before the entries
+# moved under `mcp.servers`. Left in place they are read as a server named
+# after the host, so drop them when the browser MCP is not enabled.
+if os.environ.get("OPENCODE_MCP_BROWSER") != "1":
+    config.get("mcp", {}).pop("agentic-container-browser", None)
+
 config_path.write_text(json.dumps(config, indent=2) + "\n")
 PY
 
