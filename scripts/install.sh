@@ -81,10 +81,9 @@ install_orca() {
     gir1.2-atspi-2.0 python3 python3-gi \
     xclip xdotool
 
-  # Keep the GL libraries Electron loads, then drop the LLVM and Mesa drivers apt
-  # dragged in with them: the bulk of the image, and nothing loads them.
-  apt-mark manual libgbm1 libgl1-mesa-dri libglx-mesa0
-  dpkg --purge --force-depends libllvm19 mesa-libgallium libz3-4 2>/dev/null || true
+  # The GL libraries Electron loads are kept; the LLVM and Mesa drivers apt
+  # dragged in with them are dropped at the end of the build (see purge_mesa),
+  # because that purge breaks the apt state for anything installed after it.
 
   local version="${ORCA_VERSION:-latest}" deb_arch deb_name url tmp_dir deb
   if [[ "$version" == latest ]]; then
@@ -163,8 +162,29 @@ case ",$features," in
   *) features="ssh,$features" ;;
 esac
 
+# Fixed order, so a FEATURES list like "adb,orca" builds the same image as
+# "orca,adb". `orca` purges the LLVM/Mesa stack that Electron does not load,
+# and that purge breaks the apt state for anything installed after it, so it
+# has to run last.
+# Drop the LLVM and Mesa drivers the Electron libraries dragged in: they are
+# the bulk of the image and nothing loads them. This runs after every other
+# feature, because `dpkg --purge --force-depends` leaves libgbm1 and libglx-mesa0
+# pointing at mesa-libgallium, and any later apt-get install then fails with
+# unmet dependencies.
+purge_mesa() {
+  apt-mark manual libgbm1 libgl1-mesa-dri libglx-mesa0
+  dpkg --purge --force-depends libllvm19 mesa-libgallium libz3-4 2>/dev/null || true
+}
+
+ordered_features=""
+for feature in ssh asdf orca chrome adb; do
+  case ",$features," in
+    *,$feature,*) ordered_features="${ordered_features:+$ordered_features,}$feature" ;;
+  esac
+done
+
 apt-get update
-for feature in ${features//,/ }; do
+for feature in ${ordered_features//,/ }; do
   case "$feature" in
     ssh) install_ssh ;;
     asdf) install_asdf ;;
@@ -177,4 +197,9 @@ for feature in ${features//,/ }; do
       ;;
   esac
 done
+
+case ",$features," in
+  *,orca,*) purge_mesa ;;
+esac
+
 rm -rf /var/lib/apt/lists/*
