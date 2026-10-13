@@ -85,7 +85,7 @@ install_orca() {
   # dragged in with them are dropped at the end of the build (see purge_mesa),
   # because that purge breaks the apt state for anything installed after it.
 
-  local version="${ORCA_VERSION:-latest}" deb_arch deb_name url tmp_dir deb
+  local version="${ORCA_VERSION:-latest}" deb_arch deb_name url deb
   if [[ "$version" == latest ]]; then
     version=$(resolve_latest_orca)
   fi
@@ -99,6 +99,9 @@ install_orca() {
   deb_name="orca-ide_${version}_${deb_arch}.deb"
   url="https://github.com/stablyai/orca/releases/download/v${version}/${deb_name}"
 
+  # Not `local`: the EXIT trap fires after this function returns, by which time a
+  # local variable is out of scope and `set -u` turns the cleanup into a build
+  # failure ("tmp_dir: unbound variable").
   tmp_dir=$(mktemp -d)
   trap 'rm -rf "$tmp_dir"' EXIT
 
