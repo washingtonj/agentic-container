@@ -32,7 +32,7 @@ Set these in `.env` next to `docker-compose.yml` — compose reads it — or in 
 | `ANDROID_EMULATOR_IMAGE` | `budtmo/docker-android:emulator_14.0` | Android emulator image tag |
 | `ANDROID_EMULATOR_DEVICE` | `Nexus 5` | Device profile passed to Docker-Android |
 | `ANDROID_EMULATOR_ARGS` | `-no-boot-anim -no-snapshot` | Additional emulator startup arguments |
-| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `3gb` / `2` | Emulator resource caps |
+| `ANDROID_MEM_LIMIT` / `ANDROID_CPUS` | `5gb` / `2` | Emulator resource caps |
 | `MACVLAN_NETWORK` | `lan_macvlan` | Existing external Docker macvlan network used by the runtime override |
 | `MACVLAN_IPV4_ADDRESS` | (empty) | Fixed address for the runtime on that network; empty takes the next free address from the pool, which can change between `up`s |
 | `SYNCTHING_GUI_HOST_PORT` / `SYNCTHING_SYNC_HOST_PORT` / `SYNCTHING_DISCOVERY_HOST_PORT` | `8384` / `22000` / `21027` | Host ports for Syncthing under the macvlan override, where they bind to loopback |
@@ -159,18 +159,19 @@ ADB gives the agent the full shell, package installer and `am`/`input` tooling, 
 
 The emulator is the heaviest service in the stack and the usual cause of a slow host. Two settings control its footprint, and they are not interchangeable:
 
-- `ANDROID_EMULATOR_ARGS` sets the **guest heap** (`-memory`, `-cores`) the Android system sees. This is the main lever. The stock device profile asks for more RAM than a small host can spare, and the emulator then sits at its container's memory ceiling swapping — which reads as "the emulator is slow" but is really memory pressure.
-- `ANDROID_MEM_LIMIT` caps what the **container** may use. A cap alone does not make the emulator faster: it only converts excess use into an OOM kill. The guest heap has to be sized to fit inside it.
+- `ANDROID_EMULATOR_ARGS` sets the **guest heap** (`-memory`) the Android system sees, alongside the boot and audio flags. This is the main lever. The stock device profile asks for more RAM than a small host can spare, and the emulator then sits at its container's memory ceiling swapping — which reads as "the emulator is slow" but is really memory pressure.
+- `ANDROID_MEM_LIMIT` caps what the **container** may use. A cap alone does not make the emulator faster: it only converts excess use into an OOM kill. The guest heap has to be sized to fit inside it, with room for QEMU's own overhead on top.
 
-Measured on a 14GB host with an API 34 image, at idle:
+Measured on a 14GB host with an API 34 image, at idle once booted:
 
-| Guest heap | Container use | CPU |
-|---|---|---|
-| stock profile | 5.49 GiB of a 6 GiB cap (91%) | 36% |
-| `-memory 2048 -cores 2` | 3.21 GiB of 4 GiB | 6% |
-| `-memory 3072 -cores 2` | 3.12 GiB of 4 GiB | 6% |
+| Guest heap | Container use | CPU | Boot |
+|---|---|---|---|
+| stock profile | 5.49 GiB of 6 GiB cap (91%) | 36% | — |
+| `-memory 3072` | 3.81 GiB of 4 GiB cap | 6% | ~3.5 min |
 
-The default is `-memory 3072 -cores 2` under a 4GB cap. Going below 3072 buys nothing here — both sizes settle near 3.1GB, because QEMU's own overhead, not the guest heap, sets the floor. If the host has less memory, lower `ANDROID_MEM_LIMIT` *and* the heap together.
+The default is `-memory 3072` under a 5GB cap: the guest settles near 3.8GB, so a 4GB cap leaves too little headroom and the emulator is killed under load. Going below 3072 buys little, because QEMU's overhead rather than the guest heap sets the floor.
+
+Do not add `-cores` to `ANDROID_EMULATOR_ARGS`. On this image it does not slow the emulator down, it kills it: supervisord reports `device` FATAL with exit 1 and no QEMU log line explaining why. Leave the core count to the AVD profile and cap the container with `ANDROID_CPUS` instead.
 
 The runtime runs several agents at once (Orca, OpenCode, a browser), so it is the other large consumer; see `RUNTIME_MEM_LIMIT`. Keep the sum of the caps below the host's physical memory — an over-committed host does not get slower gracefully, it starts swapping and everything stalls at once.
 

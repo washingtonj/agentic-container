@@ -74,15 +74,17 @@ services:
       EMULATOR_DEVICE: ${ANDROID_EMULATOR_DEVICE:-Nexus 5}
       # The guest heap is what grows: the default profile asks for more RAM
       # than a small host can spare, and the container then sits at its memory
-      # ceiling swapping. 3072 keeps a headless API 34 image responsive while
-      # leaving headroom under the container cap for QEMU's own overhead.
-      EMULATOR_ADDITIONAL_ARGS: ${ANDROID_EMULATOR_ARGS:--no-boot-anim -no-snapshot -no-audio -memory 3072 -cores 2}
+      # ceiling swapping. 3072 keeps a headless API 34 image responsive.
+      # Cores are left to the AVD profile on purpose: passing -cores 2 to this
+      # image kills the emulator outright (supervisord reports `device` FATAL,
+      # exit 1) rather than slowing it down.
+      EMULATOR_ADDITIONAL_ARGS: ${ANDROID_EMULATOR_ARGS:--no-boot-anim -no-snapshot -no-audio -memory 3072}
     devices:
       - /dev/kvm:/dev/kvm
     expose:
       - "5555"
-    mem_limit: ${ANDROID_MEM_LIMIT:-4gb}
-    memswap_limit: ${ANDROID_MEM_LIMIT:-4gb}
+    mem_limit: ${ANDROID_MEM_LIMIT:-5gb}
+    memswap_limit: ${ANDROID_MEM_LIMIT:-5gb}
     cpus: ${ANDROID_CPUS:-2}
     pids_limit: ${ANDROID_PIDS_LIMIT:-256}
     logging:
